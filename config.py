@@ -5,7 +5,8 @@ DB_PATH = "gym_tracker.db"
 USER_TABLE = "user"
 USER_COLUMNS = {
     "user_name": "TEXT",
-    "email": "TEXT"
+    "email": "TEXT",
+    "age": "INTEGER"
 }
 
 # Weight log table info (matches your schema: personal_weight)

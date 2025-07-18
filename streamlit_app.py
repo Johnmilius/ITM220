@@ -49,6 +49,33 @@ def delete_row(table, pk_name, pk_value):
     except Exception as e:
         st.error(f"Error deleting from {table}: {e}")
 
+def transfer_age(from_id, to_id, amount):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(f"SELECT age FROM {USER_TABLE} WHERE user_id = ?", (from_id,))
+        from_age_result = cur.fetchone()
+        cur.execute(f"SELECT age FROM {USER_TABLE} WHERE user_id = ?", (to_id,))
+        to_age_result = cur.fetchone()
+
+        if from_age_result is None or to_age_result is None:
+            raise ValueError("One of the selected IDs does not exist.")
+
+        from_age = from_age_result[0]
+        to_age = to_age_result[0]
+
+        if from_age < amount:
+            raise ValueError("Insufficient age to transfer.")
+
+        # Begin transaction
+        cur.execute(f"UPDATE {USER_TABLE} SET age = age - ? WHERE user_id = ?", (amount, from_id))
+        cur.execute(f"UPDATE {USER_TABLE} SET age = age + ? WHERE user_id = ?", (amount, to_id))
+        conn.commit()
+        return True, "Transfer successful."
+    except Exception as e:
+        conn.rollback()
+        return False, f"Transfer failed: {e}"
+
 # --- Streamlit UI ---
 st.title("Gym Tracker CRUD App")
 
@@ -93,6 +120,33 @@ with tab1:
         if st.button("Delete User"):
             delete_row(USER_TABLE, "user_id", delete_user_id)
             st.warning("User deleted!")
+
+        # --- Transaction: Transfer Age ---
+        st.subheader("Transfer Age Between Users (Transactional)")
+
+        # Create name-to-id and id-to-name mappings
+        name_id_map = {f"{user['user_name']} (ID {user['user_id']})": user['user_id'] for user in users}
+        id_name_map = {user['user_id']: user['user_name'] for user in users}
+        id_age_map = {user['user_id']: user['age'] for user in users}
+
+        from_name = st.selectbox("From (User)", list(name_id_map.keys()), key="from_user")
+        to_name_options = [n for n in name_id_map.keys() if n != from_name]
+        to_name = st.selectbox("To (User)", to_name_options, key="to_user")
+
+        from_id = name_id_map[from_name]
+        to_id = name_id_map[to_name]
+
+        st.markdown(f"**{id_name_map[from_id]}'s current age:** {id_age_map[from_id]}")
+        st.markdown(f"**{id_name_map[to_id]}'s current age:** {id_age_map[to_id]}")
+
+        amount = st.number_input("How many years to transfer (subtract from sender and add to recipient)", min_value=1, step=1)
+
+        if st.button("Transfer Age"):
+            success, msg = transfer_age(from_id, to_id, amount)
+            if success:
+                st.success(msg)
+            else:
+                st.error(msg)
 
 with tab2:
     st.header("Manage Weight Logs")
