@@ -1,144 +1,149 @@
 import streamlit as st
 import sqlite3
-from config import DB_PATH, TABLE_NAME, COLUMNS
+from config import DB_PATH, USER_TABLE, USER_COLUMNS, USER_WEIGHT_TABLE, USER_WEIGHT_COLUMNS
 
 # Connect to SQLite DB
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
-    return sqlite3.connect(DB_PATH)
 
-def fetch_all():
+# Generic fetch all rows from a table
+def fetch_all(table):
     conn = get_connection()
-    conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute(f"SELECT * FROM {TABLE_NAME}")
+    cur.execute(f"SELECT * FROM {table}")
     return cur.fetchall()
 
-def insert_row(data):
+# Insert a row into a table
+def insert_row(table, data):
     try:
         conn = get_connection()
         cur = conn.cursor()
         placeholders = ', '.join(['?'] * len(data))
-        query = f"INSERT INTO {TABLE_NAME} ({', '.join(data.keys())}) VALUES ({placeholders})"
+        query = f"INSERT INTO {table} ({', '.join(data.keys())}) VALUES ({placeholders})"
         cur.execute(query, tuple(data.values()))
         conn.commit()
     except Exception as e:
-        st.error(f"Error inserting data: {e}")
+        st.error(f"Error inserting into {table}: {e}")
 
-def update_row(id_val, data):
+# Update a row by primary key
+def update_row(table, pk_name, pk_value, data):
     try:
         conn = get_connection()
         cur = conn.cursor()
         set_clause = ', '.join([f"{col}=?" for col in data])
-        query = f"UPDATE {TABLE_NAME} SET {set_clause} WHERE id = ?"
-        cur.execute(query, tuple(data.values()) + (id_val,))
+        query = f"UPDATE {table} SET {set_clause} WHERE {pk_name} = ?"
+        cur.execute(query, tuple(data.values()) + (pk_value,))
         conn.commit()
     except Exception as e:
-        st.error(f"Error updating data: {e}")
+        st.error(f"Error updating {table}: {e}")
 
-def delete_row(id_val):
+# Delete a row by primary key
+def delete_row(table, pk_name, pk_value):
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(f"DELETE FROM {TABLE_NAME} WHERE id = ?", (id_val,))
+        cur.execute(f"DELETE FROM {table} WHERE {pk_name} = ?", (pk_value,))
         conn.commit()
     except Exception as e:
-        st.error(f"Error deleting data: {e}")
-
-def transfer_age(from_id, to_id, amount):
-    conn = get_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute(f"SELECT age FROM {TABLE_NAME} WHERE id = ?", (from_id,))
-        from_age = cur.fetchone()[0]
-        cur.execute(f"SELECT age FROM {TABLE_NAME} WHERE id = ?", (to_id,))
-        to_age = cur.fetchone()[0]
-
-        if from_age is None or to_age is None:
-            raise ValueError("One of the selected IDs does not exist.")
-
-        if from_age < amount:
-            raise ValueError("Insufficient age to transfer.")
-
-        # Begin transaction
-        cur.execute(f"UPDATE {TABLE_NAME} SET age = age - ? WHERE id = ?", (amount, from_id))
-        cur.execute(f"UPDATE {TABLE_NAME} SET age = age + ? WHERE id = ?", (amount, to_id))
-        conn.commit()
-        return True, "Transfer successful."
-    except Exception as e:
-        conn.rollback()
-        return False, f"Transfer failed: {e}"
+        st.error(f"Error deleting from {table}: {e}")
 
 # --- Streamlit UI ---
-st.title(f"CRUD App for '{TABLE_NAME}' Table")
+st.title("Gym Tracker CRUD App")
 
-rows = fetch_all()
-st.subheader("Existing Records")
-st.dataframe(rows)
+tab1, tab2 = st.tabs(["Users", "Weight Logs"])
 
-# --- Add New Record ---
-st.subheader("Add New Record")
-with st.form("add_form"):
-    new_data = {col: st.text_input(f"{col}") for col in COLUMNS}
-    submitted = st.form_submit_button("Add")
-    if submitted:
-        insert_row(new_data)
-        st.success("Record added!")
+with tab1:
+    st.header("Manage Users")
 
-# --- Update Record ---
-if rows:
-    st.subheader("Update Existing Record")
-    row_ids = [row['id'] for row in rows]
-    selected_id = st.selectbox("Select ID to update", row_ids)
-    selected_row = next((row for row in rows if row['id'] == selected_id), None)
+    users = fetch_all(USER_TABLE)
+    user_ids = [user["user_id"] for user in users]
 
-    if selected_row:
-        with st.form("update_form"):
-            updated_data = {
-                col: st.text_input(f"{col}", value=str(selected_row[col])) 
-                for col in COLUMNS
-            }
-            updated = st.form_submit_button("Update")
-            if updated:
-                update_row(selected_id, updated_data)
-                st.success("Record updated!")
+    st.subheader("Existing Users")
+    st.dataframe(users)
 
-    # --- Delete Record ---
-    st.subheader("Delete Record")
-    delete_id = st.selectbox("Select ID to delete", row_ids, key="delete")
-    if st.button("Delete"):
-        delete_row(delete_id)
-        st.warning("Record deleted.")
+    st.subheader("Add New User")
+    with st.form("add_user_form"):
+        new_user = {col: st.text_input(f"{col}") for col in USER_COLUMNS}
+        submitted = st.form_submit_button("Add User")
+        if submitted:
+            if all(new_user.values()):
+                insert_row(USER_TABLE, new_user)
+                st.success("User added!")
+            else:
+                st.error("Please fill in all fields.")
 
-    
-# --- Transaction: Transfer Age ---
-st.subheader("Transfer Age Between Users (Transactional)")
+    if users:
+        st.subheader("Update User")
+        selected_user_id = st.selectbox("Select User ID to update", user_ids)
+        selected_user = next((u for u in users if u["user_id"] == selected_user_id), None)
+        if selected_user:
+            with st.form("update_user_form"):
+                updated_user = {
+                    col: st.text_input(col, value=selected_user[col]) for col in USER_COLUMNS
+                }
+                updated = st.form_submit_button("Update User")
+                if updated:
+                    update_row(USER_TABLE, "user_id", selected_user_id, updated_user)
+                    st.success("User updated!")
 
-# Create name-to-id and id-to-name mappings
-name_id_map = {f"{row['name']} (ID {row['id']})": row['id'] for row in rows}
-id_name_map = {row['id']: row['name'] for row in rows}
-id_age_map = {row['id']: row['age'] for row in rows}
+        st.subheader("Delete User")
+        delete_user_id = st.selectbox("Select User ID to delete", user_ids, key="delete_user")
+        if st.button("Delete User"):
+            delete_row(USER_TABLE, "user_id", delete_user_id)
+            st.warning("User deleted!")
 
-from_name = st.selectbox("From (User)", list(name_id_map.keys()), key="from_user")
-to_name_options = [n for n in name_id_map.keys() if n != from_name]
-to_name = st.selectbox("To (User)", to_name_options, key="to_user")
+with tab2:
+    st.header("Manage Weight Logs")
 
-from_id = name_id_map[from_name]
-to_id = name_id_map[to_name]
+    weights = fetch_all(USER_WEIGHT_TABLE)
+    weight_ids = [w["weight_log_id"] for w in weights]
 
-st.markdown(f"**{id_name_map[from_id]}'s current age:** {id_age_map[from_id]}")
-st.markdown(f"**{id_name_map[to_id]}'s current age:** {id_age_map[to_id]}")
+    st.subheader("Existing Weight Logs")
+    st.dataframe(weights)
 
-amount = st.number_input("How many years to transfer (subtract from sender and add to recipient)", min_value=1, step=1)
+    st.subheader("Add New Weight Log")
+    with st.form("add_weight_form"):
+        # Map user names to IDs for selection
+        user_map = {f"{u['user_name']} (ID {u['user_id']})": u['user_id'] for u in users}
+        selected_user = st.selectbox("Select User", list(user_map.keys()))
+        new_weight_log = {
+            "user_id": user_map[selected_user],
+            "weight": st.number_input("Weight (lbs/kg)", min_value=0.0, format="%.2f"),
+            "date": st.date_input("Date").isoformat(),
+        }
+        submitted = st.form_submit_button("Add Weight Log")
+        if submitted:
+            insert_row(USER_WEIGHT_TABLE, new_weight_log)
+            st.success("Weight log added!")
 
-if st.button("Transfer Age"):
-    success, msg = transfer_age(from_id, to_id, amount)
-    if success:
-        st.success(msg)
-    else:
-        st.error(msg)
+    if weights:
+        st.subheader("Update Weight Log")
+        selected_weight_id = st.selectbox("Select Weight Log ID to update", weight_ids)
+        selected_weight = next((w for w in weights if w["weight_log_id"] == selected_weight_id), None)
+        if selected_weight:
+            with st.form("update_weight_form"):
+                updated_weight = {
+                    "user_id": st.selectbox("User", list(user_map.keys()),
+                                            index=list(user_map.values()).index(selected_weight["user_id"])),
+                    "weight": st.number_input("Weight (lbs/kg)", value=selected_weight["weight"], format="%.2f"),
+                    "date": st.date_input("Date", value=selected_weight["date"]),
+                }
+                # Convert selected user back to user_id
+                updated_weight["user_id"] = user_map[updated_weight["user_id"]]
 
-# ---
+                updated = st.form_submit_button("Update Weight Log")
+                if updated:
+                    update_row(USER_WEIGHT_TABLE, "weight_log_id", selected_weight_id, updated_weight)
+                    st.success("Weight log updated!")
+
+        st.subheader("Delete Weight Log")
+        delete_weight_id = st.selectbox("Select Weight Log ID to delete", weight_ids, key="delete_weight")
+        if st.button("Delete Weight Log"):
+            delete_row(USER_WEIGHT_TABLE, "weight_log_id", delete_weight_id)
+            st.warning("Weight log deleted!")
+
+
+
 

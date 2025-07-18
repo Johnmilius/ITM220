@@ -39,8 +39,8 @@ Before deploying anything, get it working on your own machine.
 3. Run:
 
 ```bash
-pip install -r requirements.txt
-streamlit run app.py
+py -m pip install -r requirements.txt
+streamlit run streamlit_app.py
 ```
 
 The app will open in your browser at `http://localhost:8501`.
