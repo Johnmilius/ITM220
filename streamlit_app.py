@@ -48,6 +48,24 @@ def delete_row(table, pk_name, pk_value):
         conn.commit()
     except Exception as e:
         st.error(f"Error deleting from {table}: {e}")
+        
+## MY AI ADDITION
+
+
+def transfer_weight_logs(from_user_id, to_user_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        # Start transaction
+        cur.execute(
+            f"UPDATE {USER_WEIGHT_TABLE} SET user_id = ? WHERE user_id = ?",
+            (to_user_id, from_user_id)
+        )
+        conn.commit()
+        return True, "Weight logs transferred successfully."
+    except Exception as e:
+        conn.rollback()
+        return False, f"Transfer failed: {e}"
 
 # --- Streamlit UI ---
 st.title("Gym Tracker CRUD App")
@@ -143,7 +161,25 @@ with tab2:
         if st.button("Delete Weight Log"):
             delete_row(USER_WEIGHT_TABLE, "weight_log_id", delete_weight_id)
             st.warning("Weight log deleted!")
+        
+    st.subheader("Transfer Weight Logs Between Users")
+
+    from_user = st.selectbox("Transfer FROM (User)", list(user_map.keys()), key="transfer_from")
+    to_user_options = [name for name in user_map.keys() if name != from_user]
+    to_user = st.selectbox("Transfer TO (User)", to_user_options, key="transfer_to")
+
+    from_user_id = user_map[from_user]
+    to_user_id = user_map[to_user]
+
+    if st.button("Transfer Weight Logs"):
+        success, msg = transfer_weight_logs(from_user_id, to_user_id)
+        if success:
+            st.success(msg)
+        else:
+            st.error(msg)
 
 
 
+
+## Transaction code addition
 
